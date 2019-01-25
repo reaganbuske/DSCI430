@@ -1,7 +1,10 @@
 .DS_Store
 **/.DS_Store
 /data/
+/databases/
 *.pyc
 **/*.pyc
+*.csv
+**/*.csv
 .ipynb_checkpoints
 **/.ipynb_checkpoints
