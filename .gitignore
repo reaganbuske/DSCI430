@@ -1,7 +1,9 @@
 .DS_Store
 **/.DS_Store
 /data/
+/baseball/
 /databases/
+/pbpython/
 *.pyc
 **/*.pyc
 *.csv
