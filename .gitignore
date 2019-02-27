@@ -2,6 +2,7 @@
 **/.DS_Store
 /data/
 /baseball/
+/make_db/
 /databases/
 /pbpython/
 *.pyc

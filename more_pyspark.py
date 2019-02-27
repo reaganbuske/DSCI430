@@ -11,7 +11,7 @@ DTYPES_TO_SPARK_TYPES = {'O':StringType,
 def get_spark_types(df, keys=[]):
     sql_type = lambda name, dtype: StructField(name, 
                                                DTYPES_TO_SPARK_TYPES[dtype.kind](),
-                                               True if name in keys else False)
+                                               False if name in keys else True)
     cols_and_dtypes = lambda df: zip(df.columns, df.dtypes)
     return StructType([sql_type(col, dtype) for col, dtype in cols_and_dtypes(df)])
 

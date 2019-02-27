@@ -12,7 +12,7 @@ DTYPES_TO_SQLALCHEMY_TYPES = {'O':String,
                               'M':DateTime}
 
 
-def get_spark_types(df):
+def get_sql_types(df):
     sql_type = lambda dtype: DTYPES_TO_SQLALCHEMY_TYPES[dtype.kind] 
     cols_and_dtypes = lambda df: zip(df.columns, df.dtypes)
     return {col:sql_type(dtype) 
