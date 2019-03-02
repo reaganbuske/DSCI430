@@ -4,12 +4,17 @@ from sqlalchemy.sql.elements import _interpret_as_column_or_from
 from sqlalchemy.sql.annotation import AnnotatedColumn
 from sqlalchemy import column
 from functoolz import pipeable
-
+from sqlparse import format
 
 DTYPES_TO_SQLALCHEMY_TYPES = {'O':String,
                               'i':Integer,
                               'f':Float,
                               'M':DateTime}
+
+
+pprint = lambda stmt: print(format(str(stmt),
+                             reindent=True, 
+                             keyword_case='upper'))
 
 
 def get_sql_types(df):
