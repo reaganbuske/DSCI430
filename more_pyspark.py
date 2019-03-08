@@ -1,6 +1,9 @@
 import pandas as pd
 from functoolz import pipeable
 from pyspark.sql.types import StructType, StructField, IntegerType, FloatType, StringType, DateType
+from pyspark.sql.functions import col, create_map, lit, when, isnull
+from pyspark.sql.column import Column
+from itertools import chain
 
 DTYPES_TO_SPARK_TYPES = {'O':StringType,
                          'i':IntegerType,
@@ -56,3 +59,12 @@ def cols_between(col1, col2, col_names, inclusive=True):
 @pipeable
 def all_but(cols_to_exclude, col_names):
     return [c for c in col_names if c not in cols_to_exclude]
+
+def recode(col_name, map_dict, default=None):
+    if not isinstance(col, Column):
+        col_name = col(col_name)
+    mapping_expr = create_map([lit(x) for x in chain(*map_dict.items())])
+    if default is None:
+        return  mapping_expr.getItem(col_name)
+    else:
+        return when(~isnull(mapping_expr.getItem(col_name)), mapping_expr.getItem(col_name)).otherwise(default)

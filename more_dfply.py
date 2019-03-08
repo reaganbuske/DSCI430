@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dfply import make_symbolic, pipe, symbolic_evaluation, Intention
 import pandas as pd
 import numpy as np
@@ -55,8 +56,24 @@ test_fix_names()
 
 
 @make_symbolic
+def extract(col, pattern):
+    if re.compile(pattern).groups != 1:
+        raise ValueError('extract requires a pattern with exactly 1 group')
+    return col.str.extract(pattern, expand=False)
+
+
+@make_symbolic
 def to_datetime(series, infer_datetime_format=True):
     return pd.to_datetime(series, infer_datetime_format=infer_datetime_format)
+
+
+@make_symbolic
+def recode(col, d, default=None):
+    if default is not None:
+        new_d = defaultdict(lambda: default)
+        new_d.update(d)
+        d = new_d
+    return col.map(d)
 
 
 @pipe
