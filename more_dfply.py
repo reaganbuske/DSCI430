@@ -1,5 +1,5 @@
 from collections import defaultdict
-from dfply import make_symbolic, pipe, symbolic_evaluation, Intention
+from dfply import make_symbolic, pipe, symbolic_evaluation, Intention, dfpipe, rename
 import pandas as pd
 import numpy as np
 import re
@@ -10,7 +10,7 @@ STARTS_WITH_DIGITS_REGEX = re.compile(r'\d+')
 PUNC_REGEX = re.compile('[{0}]'.format(re.escape(punctuation.replace('_', ''))))
 WS_REGEX = re.compile('[{0}]'.format(re.escape(whitespace)))
 
-def fix_name(name:str) -> str:
+def fix_name(name:str, make_lower:bool=False) -> str:
     """ Makes a column name a proper identifier.
     
     This function will
@@ -26,7 +26,8 @@ def fix_name(name:str) -> str:
     if name.isidentifier():
         return name
     else:
-        return name >> strip >> remove_punc >> fix_starting_digit >> replace_whitespace
+        new_name = name >> strip >> remove_punc >> fix_starting_digit >> replace_whitespace
+        return new_name.lower() if make_lower else new_name
 
 def test_fix_name() -> None:
     good_name = 'good_name'
@@ -36,22 +37,22 @@ def test_fix_name() -> None:
 test_fix_name()
     
 
-@make_symbolic
-def fix_names(df):
+@dfpipe
+def fix_names(df, make_lower=False):
     """ Creates a dict of new_name:old_name pairs.
     
     Any name that is not an identifier (using the new .isidentifier predicate) 
     The new names have all punctuation removed, outer whitespace removed,
     and whitespace replaced with _.
     """
-    return {fix_name(col):col for col in df.columns}
+    return df >> rename(**{fix_name(col, make_lower=make_lower):col for col in df.columns})
 
 def test_fix_names():
     good_name = 'good_name'
     bad_name = " 1bad_name!1!\n"
     df = pd.DataFrame({good_name: [1,2,3],
                        bad_name:[1,2,3]})
-    assert all(k.isidentifier() for k in fix_names(df))
+    assert all(k.isidentifier() for k in df >> fix_names)
 test_fix_names()
 
 
@@ -120,3 +121,7 @@ def ifelse(cond, then, else_):
         n = len(cond)
         return np.where(cond, maybe_tile(n, then), maybe_tile(n, else_))
     
+
+@dfpipe
+def union_all(left_df, right_df, ignore_index=True):
+    return pd.concat([left_df, right_df], ignore_index=ignore_index)
