@@ -1,10 +1,12 @@
 from collections import defaultdict
-from dfply import make_symbolic, pipe, symbolic_evaluation, Intention, dfpipe, rename
+from dfply import make_symbolic, pipe, symbolic_evaluation, Intention, dfpipe, rename, flatten, X
 import pandas as pd
 import numpy as np
 import re
 from string import punctuation, whitespace
 from functoolz import pipeable
+from functools import reduce
+from toolz import identity
 
 STARTS_WITH_DIGITS_REGEX = re.compile(r'\d+')
 PUNC_REGEX = re.compile('[{0}]'.format(re.escape(punctuation.replace('_', ''))))
@@ -46,6 +48,7 @@ def fix_names(df, make_lower=False):
     and whitespace replaced with _.
     """
     return df >> rename(**{fix_name(col, make_lower=make_lower):col for col in df.columns})
+
 
 def test_fix_names():
     good_name = 'good_name'
@@ -92,34 +95,152 @@ def row_index_slice(df, *args):
     else:
         return df.loc[args[0]:args[1]]
     
-    
-@make_symbolic
+
+@pipeable
 def maybe_tile(n, col):
-    if not hasattr(col, '__len__') or len(col) < n:
+    if (isinstance(col, str) # Treat strings as singletons
+        or not hasattr(col, '__len__') # Other singletons
+        or len(col) < n # Too short
+       ):
         return pd.Series(np.tile(col, n)[:n])
     else:
         return pd.Series(col[:n])
+
     
-    
+def test_maybe_tile():
+    # Test singletons
+    for val in (5, 'singleton', 2.3):
+        assert len(maybe_tile(3, val)) == 3
+        assert (maybe_tile(3, val) == val).all()
+    # Test piping
+    assert (5 >> maybe_tile(2) == pd.Series([5,5])).all()
+    # Test tiling for too short
+    assert (maybe_tile(5, [1,2]) == pd.Series([1,2,1,2,1])).all()
+    # Test truncating for too long
+    assert (maybe_tile(3, range(10)) == pd.Series(range(3))).all()
+test_maybe_tile()
+
+
+@pipeable
+def maybe_eval(df, col): 
+    """ Evaluate col with df context whenever col is an Intention"""
+    return col.evaluate(df) if isinstance(col, Intention) else col
+
+
+def test_maybe_eval():
+    assert maybe_eval(None, 5) == 5
+    assert maybe_eval(5, X) == 5
+    assert maybe_eval(5.0, X.is_integer())
+    f = make_symbolic(lambda x: x + 1)
+    assert maybe_eval([1,2,3], f(X[0])) == 2
+test_maybe_eval()
+
+
+def any_intention(*args): 
+    """Flattens args and checks for Intentions"""
+    return any(isinstance(o, Intention) for o in flatten(args))
+
+
+def test_any_intention():
+    assert any_intention(X)
+    assert any_intention([X])
+    assert any_intention([[X]])
+    assert not any_intention(1)
+    assert not any_intention(1, 'a', 5.5)
+    assert not any_intention(1, 'a', [5.5])
+test_any_intention()   
+
+
+def tiled_where(cond, then, else_):
+    """Make then and else_ the same length as cond then perform np.where"""
+    n = len(cond)
+    return np.where(cond, maybe_tile(n, then), maybe_tile(n, else_))
+
+
+def test_tiled_where():
+    assert (tiled_where([True, True], 'Yes', 'No') == 'Yes').all()
+    assert (tiled_where([False, False], 'Yes', 'No') == 'No').all()
+    assert (tiled_where([True, False], 'Yes', 'No') == pd.Series(['Yes', 'No'])).all()
+    assert (tiled_where([True, True], [1,2], [3,4]) == pd.Series([1,2])).all()
+    assert (tiled_where([False, False], [1,2], [3,4]) == pd.Series([3,4])).all()
+    assert (tiled_where([True, False], [1,2], [3,4]) == pd.Series([1,4])).all()
+    assert (tiled_where([False, True], [1,2], [3,4]) == pd.Series([3,2])).all()
+    assert (tiled_where([True, True], [1,2,3], [4, 5, 6]) == pd.Series([1,2])).all()
+    assert (tiled_where([False, False], [1,2,3], [4, 5, 6]) == pd.Series([4,5])).all()
+test_tiled_where()
+
+
+def cond_eval(cond, expr, df):
+    """ Only evaluate expr, which maybe an Intention, when cond == True"""
+    return maybe_eval(df, expr) if cond else None
+
+
+def test_cond_eval():
+    assert cond_eval(True, X, 5) == 5
+    assert cond_eval(True, X.is_integer(), 5.0)
+    f = make_symbolic(lambda x: x + 1)
+    assert cond_eval(True, f(X), 5) == 6
+    assert cond_eval(False, X/0, 5) is None
+test_cond_eval()
+
+
 def ifelse(cond, then, else_):
-    if any(isinstance(o, Intention) for o in (cond, then, else_)):
-        def outfunc(df): 
-            cond_out = cond.evaluate(df) if isinstance(cond, Intention) else cond
-            n = len(cond_out)
-            if cond_out.all():
-                then_out = then.evaluate(df) if isinstance(then, Intention) else then
-                return maybe_tile(n, then_out)
-            if not cond_out.any():
-                else_out = else_.evaluate(df) if isinstance(else_, Intention) else else_
-                return maybe_tile(n, else_out)
-            else:
-                then_out = then.evaluate(df) if isinstance(then, Intention) else then
-                else_out = else_.evaluate(df) if isinstance(else_, Intention) else else_
-                return np.where(cond_out, maybe_tile(n, then_out), maybe_tile(n, else_out))
-        return Intention(outfunc)
-    else:
-        n = len(cond)
-        return np.where(cond, maybe_tile(n, then), maybe_tile(n, else_))
+    """ Returns a Series that is the same length as cond, picking elements from then and else_ 
+        based on the truth of cond.
+        
+        If then or else_ are instances of Intention, then they will only be evaluated when needed."""
+    def outfunc(df): 
+        cond_out = maybe_eval(df, cond)
+        then_out = cond_eval(cond_out.any(), then, df)
+        else_out = cond_eval(not cond_out.all(), else_, df)
+        return pd.Series(tiled_where(cond_out, then_out, else_out))
+    return Intention(outfunc) if any_intention(cond, then, else_) else pd.Series(tiled_where(cond, then, else_))
+
+def test_ifelse():
+    all_true = np.repeat(True, 3)
+    all_false = np.repeat(False, 3)
+    assert (ifelse(all_true, 'Yes', 'No') == 'Yes').all()
+    assert (ifelse(all_false, 'Yes', 'No') == 'No').all()
+    s1 = pd.Series(np.arange(1, 4, 1))
+    s2 = pd.Series(np.arange(11, 14, 1))
+    assert (ifelse(all_true, s1, s2) == s1).all()
+    assert (ifelse(all_false, s1, s2) == s2).all()
+    short = np.arange(1,3,1)
+    long = np.arange(1,5,1)
+    assert (ifelse(all_true, short, long) == pd.Series([1,2,1])).all()
+    assert (ifelse(all_false, short, long) == pd.Series([1,2,3])).all()
+    df = pd.DataFrame({'cat':['a', 'a', 'b', 'b', 'b'],
+                   'v1':[1,2,1,2,3],
+                   'v2':[3,4,3,4,5] })
+    assert (ifelse(df.cat == 'a', df.v1, df.v2) == pd.Series([1, 2, 3, 4, 5])).all()
+    e1 = ifelse(df.cat == 'a', X.v1, df.v2)
+    e2 = ifelse(df.cat == 'a', df.v1, X.v2)
+    e3 = ifelse(df.cat == 'a', X.v1, X.v2)
+    e4 = ifelse(X.cat == 'a', X.v1, X.v2)
+    assert (e1.evaluate(df) == pd.Series([1, 2, 3, 4, 5])).all()
+    assert (e2.evaluate(df) == pd.Series([1, 2, 3, 4, 5])).all()
+    assert (e3.evaluate(df) == pd.Series([1, 2, 3, 4, 5])).all()
+    assert (e4.evaluate(df) == pd.Series([1, 2, 3, 4, 5])).all()
+test_ifelse()
+
+                     
+@pipeable
+def maybe_combine(acc, col, apply_first=identity):
+    acc = apply_first(acc)
+    return acc.combine_first(apply_first(col)) if acc.isna().any() else acc
+
+
+def combine_all(args, apply_first=identity):
+    return reduce(maybe_combine(apply_first=apply_first), args)
+
+
+@pipeable
+def arg_eval_and_combine(args, df):
+    return combine_all(args, apply_first=maybe_eval(df))
+
+
+def coalesce(*args):
+    return Intention(arg_eval_and_combine(args)) if any_intention(args) else combine_all(args)
     
 
 @dfpipe
