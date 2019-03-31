@@ -6,7 +6,8 @@ import re
 from string import punctuation, whitespace
 from functoolz import pipeable
 from functools import reduce
-from toolz import identity
+from toolz import identity, last
+from unpythonic import unfold
 
 STARTS_WITH_DIGITS_REGEX = re.compile(r'\d+')
 PUNC_REGEX = re.compile('[{0}]'.format(re.escape(punctuation.replace('_', ''))))
@@ -222,27 +223,174 @@ def test_ifelse():
     assert (e3.evaluate(df) == pd.Series([1, 2, 3, 4, 5])).all()
     assert (e4.evaluate(df) == pd.Series([1, 2, 3, 4, 5])).all()
 test_ifelse()
-
                      
+
 @pipeable
 def maybe_combine(acc, col, apply_first=identity):
     acc = apply_first(acc)
     return acc.combine_first(apply_first(col)) if acc.isna().any() else acc
+
+def test_maybe_combine():
+    equal_or_na = lambda s1, s2: ((s1 == s2) | pd.isna(s1)).all()
+    s1 = pd.Series([1,      2,      np.nan, np.nan])
+    s2 = pd.Series([np.nan, 1,      2,      np.nan])
+    s3 = pd.Series([np.nan, np.nan, 1,      2])
+    o1 = pd.Series([1, 2, 2, np.nan])
+    o2 = pd.Series([1, 2, 1, 2])
+    assert equal_or_na(maybe_combine(s1, s2), o1)
+    assert equal_or_na(maybe_combine(s1, s3), o2)
+    df = pd.DataFrame({'c1':[1,      2,      np.nan, np.nan],
+                       'c2':[np.nan, 1,      2,      np.nan],
+                       'c3':[np.nan, np.nan, 1,      2]})
+    assert equal_or_na(maybe_combine(X.c1, 
+                                     X.c2, 
+                                     maybe_eval(df)),
+                       o1)
+    assert equal_or_na(maybe_combine(X.c1, 
+                                     X.c3, 
+                                     maybe_eval(df)),
+                       o2)
+test_maybe_combine()
 
 
 def combine_all(args, apply_first=identity):
     return reduce(maybe_combine(apply_first=apply_first), args)
 
 
+def test_combine_all():
+    equal_or_na = lambda s1, s2: ((s1 == s2) | pd.isna(s1)).all()
+    s1 = pd.Series([1,      2,      np.nan, np.nan])
+    s2 = pd.Series([np.nan, 1,      2,      np.nan])
+    s3 = pd.Series([np.nan, np.nan, 1,      2])
+    o1 = pd.Series([1, 2, 2, np.nan])
+    o2 = pd.Series([1, 2, 1, 2])
+    o3 = pd.Series([1, 2, 2, 2])
+    assert equal_or_na(combine_all([s1, s2]), o1)
+    assert equal_or_na(combine_all([s1, s3]), o2)
+    assert equal_or_na(combine_all([s1, s2, s3]), o3)
+    df = pd.DataFrame({'c1':[1,      2,      np.nan, np.nan],
+                       'c2':[np.nan, 1,      2,      np.nan],
+                       'c3':[np.nan, np.nan, 1,      2]})
+    assert equal_or_na(combine_all([X.c1, 
+                                    X.c2], 
+                                    maybe_eval(df)),
+                       o1)
+    assert equal_or_na(combine_all([X.c1, 
+                                    X.c3], 
+                                    maybe_eval(df)),
+                       o2)
+    assert equal_or_na(combine_all([X.c1, 
+                                    X.c2,
+                                    X.c3], 
+                                    maybe_eval(df)),
+                       o3)
+test_combine_all()
+
+
 @pipeable
 def arg_eval_and_combine(args, df):
     return combine_all(args, apply_first=maybe_eval(df))
 
+def test_arg_eval_and_combine():
+    equal_or_na = lambda s1, s2: ((s1 == s2) | pd.isna(s1)).all()
+    o1 = pd.Series([1, 2, 2, np.nan])
+    o2 = pd.Series([1, 2, 1, 2])
+    o3 = pd.Series([1, 2, 2, 2])
+    df = pd.DataFrame({'c1':[1,      2,      np.nan, np.nan],
+                       'c2':[np.nan, 1,      2,      np.nan],
+                       'c3':[np.nan, np.nan, 1,      2]})
+    assert equal_or_na(arg_eval_and_combine([X.c1, 
+                                             X.c2], 
+                                             df),
+                       o1)
+    assert equal_or_na(arg_eval_and_combine([X.c1, 
+                                             X.c3], 
+                                             df),
+                       o2)
+    assert equal_or_na(arg_eval_and_combine([X.c1, 
+                                             X.c2,
+                                             X.c3], 
+                                             df),
+                       o3)
+    # Test currying 
+    assert equal_or_na(arg_eval_and_combine([X.c1, 
+                                             X.c2])(df),
+                       o1)
+    assert equal_or_na(arg_eval_and_combine([X.c1, 
+                                             X.c3])(df),
+                       o2)
+    assert equal_or_na(arg_eval_and_combine([X.c1, 
+                                             X.c2,
+                                             X.c3])(df),
+                       o3)
+    # Test piping
+    assert equal_or_na(df >> arg_eval_and_combine([X.c1, X.c2]),
+                       o1)
+    assert equal_or_na(df >> arg_eval_and_combine([X.c1, X.c3]),
+                       o2)
+    assert equal_or_na(df >> arg_eval_and_combine([X.c1, X.c2, X.c3]),
+                       o3)
+test_arg_eval_and_combine()
+
 
 def coalesce(*args):
     return Intention(arg_eval_and_combine(args)) if any_intention(args) else combine_all(args)
+ 
     
+def test_arg_eval_and_combine():
+    equal_or_na = lambda s1, s2: ((s1 == s2) | pd.isna(s1)).all()
+    o1 = pd.Series([1, 2, 2, np.nan])
+    o2 = pd.Series([1, 2, 1, 2])
+    o3 = pd.Series([1, 2, 2, 2])
+    df = pd.DataFrame({'c1':[1,      2,      np.nan, np.nan],
+                       'c2':[np.nan, 1,      2,      np.nan],
+                       'c3':[np.nan, np.nan, 1,      2]})
+    assert equal_or_na(coalesce(df.c1, df.c2), o1)
+    assert equal_or_na(coalesce(df.c1, df.c3), o2)
+    assert equal_or_na(coalesce(df.c1, df.c2, df.c3), o3)
+    assert equal_or_na(coalesce(X.c1, X.c2).evaluate(df), o1)
+    assert equal_or_na(coalesce(X.c1, X.c3).evaluate(df), o2)
+    assert equal_or_na(coalesce(X.c1, X.c2, X.c3).evaluate(df), o3)
+test_arg_eval_and_combine()
 
-@dfpipe
-def union_all(left_df, right_df, ignore_index=True):
-    return pd.concat([left_df, right_df], ignore_index=ignore_index)
+
+def ifelse_and_coalesce(args, apply_first=identity):
+    return coalesce(*[apply_first(ifelse(c, t, np.nan)) for c, t in args])
+
+
+@pipeable
+def eval_and_case_when(args, df):
+    return ifelse_and_coalesce(args, apply_first=maybe_eval(df))
+
+
+def case_when(*args):
+    return Intention(eval_and_case_when(args)) if any_intention(args) else ifelse_and_coalesce(args)
+
+
+def test_case_when():
+    equal_or_na = lambda s1, s2: ((s1 == s2) | pd.isna(s1)).all()
+    df = pd.DataFrame({'cat':['a','a','b','b','b','c','c', 'd','d'],
+                       'val':[ 1, 2, 1, 2, 3, 1, 2, 1, 2]})
+    o1 = pd.Series([2, 3] + 7*[np.nan])
+    o2 = pd.Series([2, 3, 3, 4, 5] + 4*[np.nan])
+    o3 = pd.Series([2, 3, 3, 4, 5, 4, 5] + 2*[np.nan]) 
+    assert equal_or_na(case_when((df.cat == 'a', df.val + 1)), 
+                       o1)
+    assert equal_or_na(case_when((df.cat == 'a',  df.val + 1), 
+                                 (df.cat == 'b', df.val + 2)), 
+                       o2)
+    assert equal_or_na(case_when((df.cat == 'a', df.val + 1), 
+                                 (df.cat == 'b', df.val + 2), 
+                                 (df.cat == 'c', df.val + 3)), 
+                       o3) 
+    assert equal_or_na(case_when((X.cat == 'a', 
+                                  X.val + 1)).evaluate(df), 
+                       o1)
+    assert equal_or_na(case_when((X.cat == 'a', X.val + 1), 
+                                 (X.cat == 'b', X.val + 2)).evaluate(df) , 
+                       o2)
+    assert equal_or_na(case_when((X.cat == 'a', X.val + 1), 
+                                 (X.cat == 'b', X.val + 2), 
+                                 (X.cat == 'c', X.val + 3)).evaluate(df), 
+                       o3)
+test_case_when()
