@@ -10,17 +10,14 @@ from dfply import *
 import pandas as pd
 lakes = pd.read_csv('./data/MinneMUDAC_raw_files/mces_lakes_1999_2014.csv', header = 0, sep = ',', engine = 'python') 
 
-lakes.latitude = lakes.latitude.round(5)
-lakes.longitude = lakes.longitude.round(5)
-lakes.latitude = lakes.latitude.astype(str)
-lakes.longitude = lakes.longitude.astype(str)
+lakes.latitude = lakes.latitude.round(5).astype(str)
+lakes.longitude = lakes.longitude.round(5).astype(str)
 
 parcel = pd.read_csv('./data/MinneMUDAC_raw_files/Parcel_Lake_Monitoring_Site_Xref.txt', header = 0, sep = '\t', engine = 'python')
 
-parcel.centroid_lat = parcel.centroid_lat.round(5)
-parcel.centroid_long = parcel.centroid_long.round(5)
-parcel.centroid_lat = parcel.centroid_lat.astype(str)
-parcel.centroid_long = parcel.centroid_long.astype(str)
+parcel.centroid_lat = parcel.centroid_lat.round(5).astype(str)
+parcel.centroid_long = parcel.centroid_long.round(5).astype(str)
+
 
 lakesset = set(lakes.DNR_ID_Site_Number)
 parcelset = set(parcel.Monit_MAP_CODE1)
@@ -46,7 +43,6 @@ lake2 = (lakes >>
              filter_by(X.DNR_ID_Site_Number.isin(common_codes))>>
              drop(X.cnt)
 )
-code_to_name = {iD:name for iD,name in zip(lake2.DNR_ID_Site_Number, lake2.LAKE_NAME)}
 
 
 latlongset = set(zip(parcel.centroid_lat, parcel.centroid_long))
@@ -61,8 +57,9 @@ lakelatlong = (lakes >>
              drop(X.cnt)
 )
 
-latlong_to_code = {iD:code for iD,code in zip(zip(lakelatlong.latitude, lakelatlong.longitude) ,lakelatlong.DNR_ID_Site_Number )}
-code_to_latlong = {code:iD for iD,code in zip(zip(lakelatlong.latitude, lakelatlong.longitude) ,lakelatlong.DNR_ID_Site_Number )}
-latlong_to_name = {code_to_latlong[iD]:name for iD,name in zip(lake2.DNR_ID_Site_Number, lake2.LAKE_NAME)}
+latlong_to_code = {ID:code for ID, code in zip(zip(parcel.centroid_lat, parcel.centroid_long), parcel.Monit_MAP_CODE1)}
+code_to_latlong = {code:iD for iD,code in zip(zip(parcel.centroid_lat, parcel.centroid_long) ,parcel.Monit_MAP_CODE1)}
+code_to_name = {iD:name for iD,name in zip(lake2.DNR_ID_Site_Number, lake2.LAKE_NAME)}
+latlong_to_name = {latlong:code_to_name[code] for latlong,code in latlong_to_code.items() if code in code_to_name}
 code_to_distance = {code:distance for code,distance in zip(parcel.Monit_MAP_CODE1,parcel.Distance_Parcel_Monitoring_Site_meters)}
 latlong_to_distance = {iD:code_to_distance[name] for iD,name in latlong_to_code.items()}
