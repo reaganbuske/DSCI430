@@ -63,3 +63,8 @@ code_to_name = {iD:name for iD,name in zip(lake2.DNR_ID_Site_Number, lake2.LAKE_
 latlong_to_name = {latlong:code_to_name[code] for latlong,code in latlong_to_code.items() if code in code_to_name}
 code_to_distance = {code:distance for code,distance in zip(parcel.Monit_MAP_CODE1,parcel.Distance_Parcel_Monitoring_Site_meters)}
 latlong_to_distance = {iD:code_to_distance[name] for iD,name in latlong_to_code.items()}
+
+###########
+lakes_by_year = pd.read_csv('./data/MinneMUDAC_raw_files/lakes_by_year.csv')
+lakes_w_complete_measurement = pd.read_csv('./data/MinneMUDAC_raw_files/lakes_w_complete_measurement.csv')
+lake_names_to_keep = lakes_w_complete_measurement.LAKE_NAME
