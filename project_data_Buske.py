@@ -69,3 +69,7 @@ lakes_by_year = pd.read_csv('./data/MinneMUDAC_raw_files/lakes_by_year.csv')
 lakes_w_complete_measurement = pd.read_csv('./data/MinneMUDAC_raw_files/lakes_w_complete_measurement.csv')
 lake_names_to_keep = lakes_w_complete_measurement.LAKE_NAME
 lake_codes_to_keep = lakes_w_complete_measurement.DNR_ID_Site_Number
+
+
+########
+final_parcels = pd.read_csv('./data/MinneMUDAC_raw_files/final_parcels.csv')
